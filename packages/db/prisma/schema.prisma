@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Sector {
+  HUKUK
+  EMLAK
+  SIGORTA
+  SAGLIK
+}
+
+enum Plan {
+  FREE
+  PRO
+  AGENCY
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MEMBER
+}
+
+enum LeadUrgency {
+  LOW
+  MED
+  HIGH
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  CONVERTED
+  LOST
+}
+
+enum NotifType {
+  EMAIL
+  WHATSAPP
+}
+
+enum NotifStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  sector    Sector
+  plan      Plan     @default(FREE)
+  isActive  Boolean  @default(true)  @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt       @map("updated_at")
+
+  profiles      Profile[]
+  widgets       Widget[]
+  leads         Lead[]
+  conversations Conversation[]
+
+  @@map("tenants")
+}
+
+model Profile {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String?  @map("tenant_id")
+  supabaseAuthId String   @unique @map("supabase_auth_id")
+  role           Role     @default(MEMBER)
+  fullName       String   @map("full_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("profiles")
+}
+
+model Widget {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  token          String   @unique @default(cuid())
+  name           String
+  sector         Sector
+  isActive       Boolean  @default(true)  @map("is_active")
+  primaryColor   String   @default("#000000") @map("primary_color")
+  welcomeMessage String   @map("welcome_message")
+  systemPrompt   String   @db.Text        @map("system_prompt")
+  allowedDomain        String   @map("allowed_domain")
+  skillsConfig         Json     @default("{}") @map("skills_config")
+  maxTurns             Int      @default(5)    @map("max_turns")
+  createdBySuperAdmin  Boolean  @default(false) @map("created_by_super_admin")
+  tenantCustomization  Json?    @map("tenant_customization")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt       @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads         Lead[]
+  conversations Conversation[]
+
+  @@index([tenantId])
+  @@index([token])
+  @@map("widgets")
+}
+
+model Lead {
+  id         String      @id @default(cuid())
+  tenantId   String      @map("tenant_id")
+  widgetId   String      @map("widget_id")
+  name       String
+  contact    String
+  summary    String      @db.Text
+  score      Int
+  urgency    LeadUrgency @default(MED)
+  status     LeadStatus  @default(NEW)
+  sectorData   Json        @default("{}") @map("sector_data")
+  email        String?
+  phone        String?
+  portalToken  String?     @unique @map("portal_token")
+  notes        String?     @db.Text
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt       @map("updated_at")
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  widget        Widget         @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  conversation  Conversation?
+  notifications Notification[]
+
+  @@index([tenantId])
+  @@index([widgetId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+model Conversation {
+  id              String   @id @default(cuid())
+  sessionId       String   @unique @map("session_id")
+  widgetId        String   @map("widget_id")
+  tenantId        String   @map("tenant_id")
+  leadId          String?  @unique @map("lead_id")
+  messages        Json     @default("[]")
+  durationSeconds Int      @default(0) @map("duration_seconds")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt       @map("updated_at")
+
+  lead   Lead?  @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  widget Widget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([widgetId])
+  @@map("conversations")
+}
+
+model Notification {
+  id     String      @id @default(cuid())
+  leadId String      @map("lead_id")
+  type   NotifType
+  status NotifStatus @default(PENDING)
+  sentAt DateTime?   @map("sent_at")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([status])
+  @@map("notifications")
+}
